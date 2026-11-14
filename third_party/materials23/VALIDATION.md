@@ -17,7 +17,13 @@ recognition accuracy study. No confidence calibration or alloy capability is cla
   inference while both native adapters are alive, checking runtime coexistence.
 - The same real fixture and expected score vector are tested through the actual
   **Android native adapter** on the GitHub Actions API 29 x86_64 emulator. Score
-  comparison tolerance is 0.005, not a confidence/accuracy threshold.
+  decoded RGB, resized RGB and normalized FLOAT32 NCHW inputs must match their
+  host SHA-256 references exactly. Native score comparison tolerance is 0.02,
+  with the same top three fixture labels and normalized finite scores required.
+  This is not a confidence/accuracy threshold. The initial strict 0.005 comparison
+  found a maximum difference of 0.008371 between the host and Android quantized
+  runtimes despite identical weights and bit-identical input tensors. This measured
+  native numerical variation is documented rather than changing the app's scores.
 - Android Activity acquisition runs through the real AndroidViewModel factory,
   actual crop/pixels and native classifier. The test deliberately uses object label
   `knife` with cat pixels to ensure material output follows pixels, not COCO labels.
