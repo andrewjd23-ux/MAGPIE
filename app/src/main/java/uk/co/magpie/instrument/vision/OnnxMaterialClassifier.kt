@@ -49,6 +49,7 @@ class OnnxMaterialClassifier(context: Context) : MaterialClassifier {
         val env = OrtEnvironment.getEnvironment()
         env.setTelemetry(false)
         val nativeSession = OrtSession.SessionOptions().use { options ->
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             options.setIntraOpNumThreads(2)
             options.setInterOpNumThreads(1)
             options.setMemoryPatternOptimization(false)

@@ -32,12 +32,14 @@ def main():
     options = ort.SessionOptions()
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 1
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     options.enable_cpu_mem_arena = False
     options.enable_mem_pattern = False
     session = ort.InferenceSession(str(MODEL), sess_options=options, providers=["CPUExecutionProvider"])
     assert [(v.name, v.shape[1:], v.type) for v in session.get_inputs()] == [("pixel_values", [3, 224, 224], "tensor(float)")]
     assert [(v.name, v.shape[1:], v.type) for v in session.get_outputs()] == [("logits", [23], "tensor(float)")]
-    image = Image.open(ROOT / "tools/testdata/cat.bmp").convert("RGB").resize((224, 224), Image.Resampling.BILINEAR)
+    original_image = Image.open(ROOT / "tools/testdata/cat.bmp").convert("RGB")
+    image = original_image.resize((224, 224), Image.Resampling.BILINEAR)
     pixels = np.asarray(image, dtype=np.float32)
     tensor = np.ascontiguousarray(((pixels / np.float32(255) - np.float32(.5)) / np.float32(.5)).transpose(2, 0, 1)[None, ...])
     logits = session.run(["logits"], {"pixel_values": tensor})[0]
@@ -52,6 +54,9 @@ def main():
         resize_fixtures[f"{width}x{height}"] = hashlib.sha256(resized.tobytes()).hexdigest()
     actual = {"sha256": SHA, "runtime": ort.__version__, "labels": labels,
               "cat_logits": logits[0].tolist(), "cat_scores": scores.tolist(),
+              "cat_original_rgb_sha256": hashlib.sha256(original_image.tobytes()).hexdigest(),
+              "cat_resized_rgb_sha256": hashlib.sha256(image.tobytes()).hexdigest(),
+              "cat_tensor_sha256": hashlib.sha256(tensor.astype("<f4").tobytes()).hexdigest(),
               "resize_sha256": resize_fixtures,
               "scope": "Real graph/tensor/preprocessing regression only. Cat fixture is not material ground truth; no field accuracy or calibration claim."}
     if args.write_reference:
@@ -63,6 +68,8 @@ def main():
         expected = json.loads(REFERENCE.read_text())
         assert expected["sha256"] == SHA and expected["labels"] == labels
         assert expected["resize_sha256"] == resize_fixtures
+        for key in ("cat_original_rgb_sha256", "cat_resized_rgb_sha256", "cat_tensor_sha256"):
+            assert expected[key] == actual[key]
         np.testing.assert_allclose(logits[0], expected["cat_logits"], rtol=0, atol=.02)
         np.testing.assert_allclose(scores, expected["cat_scores"], rtol=0, atol=.005)
     print(f"Material model SHA-256, label order, real inference and preprocessing reference passed (ORT {ort.__version__})")

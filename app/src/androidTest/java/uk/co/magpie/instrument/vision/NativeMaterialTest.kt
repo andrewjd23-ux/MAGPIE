@@ -1,5 +1,8 @@
 package uk.co.magpie.instrument.vision
 
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.MessageDigest
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.os.SystemClock
@@ -24,10 +27,29 @@ class NativeMaterialTest {
         assertFalse(predictions.calibrationValidated)
         val expected = reference().getJSONArray("cat_scores")
         assertEquals(23, predictions.scores.size)
-        predictions.scores.forEachIndexed { i, score ->
+        val differences = predictions.scores.mapIndexed { i, score ->
             assertEquals(MincMaterialContract.labels[i], score.label)
-            assertEquals("Android/native score for ${score.label}", expected.getDouble(i), score.score.toDouble(), .005)
+            kotlin.math.abs(expected.getDouble(i) - score.score)
         }
+        assertTrue("Native score max delta=${differences.max()}; actual=${predictions.scores}; expected=$expected", differences.max() <= .005)
+    }
+    private fun checkFixture(input: MaterialInput) {
+        val expected = reference()
+        fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        fun rgb(pixels: IntArray) = ByteArray(pixels.size * 3).also { bytes ->
+            pixels.forEachIndexed { i, pixel ->
+                bytes[i * 3] = (pixel shr 16 and 255).toByte()
+                bytes[i * 3 + 1] = (pixel shr 8 and 255).toByte()
+                bytes[i * 3 + 2] = (pixel and 255).toByte()
+            }
+        }
+        assertEquals("Original RGB decode", expected.getString("cat_original_rgb_sha256"), hash(rgb(input.argb)))
+        assertEquals("Resized RGB", expected.getString("cat_resized_rgb_sha256"), hash(rgb(MincPreprocessor.resizeRgb(input))))
+        val tensor = MincPreprocessor.tensor(input)
+        val bytes = ByteBuffer.allocate(tensor.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        tensor.forEach { bytes.putFloat(it) }
+        assertEquals("Normalized NCHW tensor", expected.getString("cat_tensor_sha256"), hash(bytes.array()))
     }
     @Test fun bundledModelRunsInAndroidNativeRuntimeWithoutInternetPermission() {
         val context = instrumentation.targetContext
@@ -38,6 +60,7 @@ class NativeMaterialTest {
         try {
             val argb = IntArray(image.width * image.height)
             image.getPixels(argb, 0, image.width, 0, 0, image.width, image.height)
+            checkFixture(MaterialInput(argb, image.width, image.height))
             ObjectDetector(context.assets).use { detector ->
                 assertTrue(detector.detect(image).any { it.label == "cat" && it.score >= .35f })
                 OnnxMaterialClassifier(context).use { classifier ->
