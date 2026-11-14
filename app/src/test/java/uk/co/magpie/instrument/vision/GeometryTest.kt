@@ -30,12 +30,4 @@ class GeometryTest {
         assertNull(landscape.fromModel(Box2(Float.NaN, 0f, 1f, 1f)))
         assertEquals(Box2(0f, 0f, 640f, 480f), landscape.fromModel(Box2(-1f, -1f, 2f, 2f)))
     }
-    @Test fun selectionDoesNotJumpToAnotherRegionOrCategory() {
-        val old = Detection("cup", .8f, Box2(10f, 10f, 50f, 50f))
-        val overlapping = old.copy(score = .7f, box = Box2(12f, 12f, 52f, 52f))
-        assertEquals(overlapping, matchSelection(old, listOf(overlapping)))
-        assertNull(matchSelection(old, listOf(old.copy(label = "bottle"))))
-        assertNull(matchSelection(old, listOf(old.copy(box = Box2(100f, 100f, 140f, 140f)))))
-        assertNull(matchSelection(old, emptyList()))
-    }
 }

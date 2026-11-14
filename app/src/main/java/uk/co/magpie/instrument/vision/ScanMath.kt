@@ -3,7 +3,7 @@ package uk.co.magpie.instrument.vision
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/** Calculation foundation only; guided acquisition and object association are not enabled yet. */
+/** Aggregate summary helper; the guided protocol uses timestamped GuidedScan phase records. */
 data class ScanSummary(
     val baseline: Double,
     val noiseStandardDeviation: Double,

@@ -10,14 +10,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.delay
 import uk.co.magpie.instrument.vision.VisionScreen
+import uk.co.magpie.instrument.vision.TargetAcquisitionModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 @Composable
 fun MagpieApp(model: InstrumentModel, sensor: Sensor?) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val targets: TargetAcquisitionModel = viewModel()
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(model, targets, owner) {
+        val subscription = model.observeSamples(targets::onMagneticSample)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) targets.interruptScan("Activity paused; restart the controlled scan")
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { subscription.close(); owner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(tab) {
+        if (tab != 1) targets.interruptScan("Left Vision; restart the controlled scan")
+    }
     // Both screens share freshness and the existing instrument state.
     LaunchedEffect(model.active) {
         while (model.active) {
-            model.tick(SystemClock.elapsedRealtimeNanos() / 1e9)
+            val now = SystemClock.elapsedRealtimeNanos() / 1e9
+            model.tick(now)
+            targets.tick(now)
             delay(250)
         }
     }
@@ -32,7 +52,7 @@ fun MagpieApp(model: InstrumentModel, sensor: Sensor?) {
                     Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("MAGPIE Vision") })
                 }
                 Box(Modifier.weight(1f)) {
-                    if (tab == 0) InstrumentScreen(model, sensor) else VisionScreen(model)
+                    if (tab == 0) InstrumentScreen(model, sensor) else VisionScreen(model, targets)
                 }
             }
         }

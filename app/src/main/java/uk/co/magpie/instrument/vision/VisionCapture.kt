@@ -16,14 +16,16 @@ private val amber = Color.rgb(212, 171, 98)
 private val green = Color.rgb(166, 198, 160)
 
 /** Shared by the live overlay, frozen analyzed frame and exported screenshot. */
-fun drawVisionOverlay(canvas: Canvas, frame: VisionFrame, selected: Detection?) {
+fun drawVisionOverlay(canvas: Canvas, frame: VisionFrame, selected: Detection?, dimOthers: Boolean = selected != null) {
     val textSize = max(14f, frame.viewWidth / 28f)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE }
     frame.detections.forEach { detection ->
         val b = detection.box
-        paint.color = if (detection == selected) green else amber
+        val isSelected = detection === selected
+        val dimmed = dimOthers && !isSelected
+        paint.color = if (dimmed) Color.argb(80, 166, 198, 160) else amber
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = if (detection == selected) 6f else 3f
+        paint.strokeWidth = if (isSelected) 6f else 3f
         canvas.drawRect(b.left, b.top, b.right, b.bottom, paint)
         val label = "${detection.label} • score ${String.format(Locale.UK, "%.2f", detection.score)}"
         paint.style = Paint.Style.FILL
@@ -31,7 +33,7 @@ fun drawVisionOverlay(canvas: Canvas, frame: VisionFrame, selected: Detection?) 
         val x = b.left.coerceIn(0f, max(0f, frame.viewWidth - paint.measureText(label)))
         val baseline = (b.top - 8f).coerceIn(textSize + 5f, max(textSize + 5f, frame.viewHeight - 5f))
         val labelColor = paint.color
-        paint.color = Color.argb(220, 14, 21, 18)
+        paint.color = Color.argb(if (dimmed) 70 else 220, 14, 21, 18)
         canvas.drawRect(x, baseline - textSize - 4f, x + paint.measureText(label) + 5f, baseline + 4f, paint)
         paint.color = labelColor
         canvas.drawText(label, x, baseline, paint)
@@ -44,10 +46,20 @@ fun drawAnalyzedFrame(canvas: Canvas, frame: VisionFrame) {
 }
 
 /** Saves the exact analyzed image with its boxes, not a different live preview frame. API 29+. */
-fun saveVisionCapture(context: Context, frame: VisionFrame, selected: Detection?, magneticText: List<String>): String {
+fun saveVisionCapture(context: Context, frame: VisionFrame, selected: Detection?, magneticText: List<String>,
+    analysisText: List<String> = listOf("Material unknown. No controlled scan; no object attribution.")): String {
     val textSize = max(16f, frame.viewWidth / 30f)
-    val lines = listOf("MAGPIE VISION • ${Instant.now()}", "Scores are uncalibrated; material unknown.") + magneticText +
-        listOf("No controlled scan; no object attribution.")
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.textSize = textSize; typeface = Typeface.MONOSPACE }
+    val lines = (listOf("MAGPIE VISION • ${Instant.now()}", "Model scores are uncalibrated.",
+        "Image is a snapshot; magnetic values at capture.") + magneticText + analysisText).flatMap { line ->
+        buildList {
+            var remainder = line
+            while (remainder.isNotEmpty()) {
+                val count = textPaint.breakText(remainder, true, (frame.viewWidth - 24f).coerceAtLeast(1f), null).coerceAtLeast(1)
+                add(remainder.take(count)); remainder = remainder.drop(count)
+            }
+        }
+    }
     val footerHeight = ((lines.size + 1) * textSize * 1.6f).toInt()
     val bitmap = Bitmap.createBitmap(frame.viewWidth, frame.viewHeight + footerHeight, Bitmap.Config.ARGB_8888)
     val resolver = context.contentResolver

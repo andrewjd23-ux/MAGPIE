@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (!model.active || event.sensor.type != Sensor.TYPE_MAGNETIC_FIELD || event.values.size < 3) return
         model.accuracy = event.accuracy
-        model.accept(Field(event.values[0].toDouble(), event.values[1].toDouble(), event.values[2].toDouble()), SystemClock.elapsedRealtimeNanos() / 1e9)
+        model.accept(Field(event.values[0].toDouble(), event.values[1].toDouble(), event.values[2].toDouble()), SystemClock.elapsedRealtimeNanos() / 1e9, event.timestamp / 1e9)
     }
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { model.accuracy = accuracy }
 }

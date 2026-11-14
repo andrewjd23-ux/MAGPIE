@@ -14,74 +14,138 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Install with `adb instal
 
 Pinned stable toolchain: AGP 8.7.3, Gradle 8.9, Kotlin and Compose compiler plugin 2.0.21, Compose BOM 2024.12.01, Activity 1.9.3, Lifecycle 2.8.7. Java source/target is 17. The Gradle wrapper is included and its distribution checksum is pinned. A first build requires access to Google Maven, Maven Central and Gradle distributions.
 
-## MAGPIE Vision — first increment (v1.1.0)
+## MAGPIE Vision — Target Acquisition Mode (v1.2.0)
 
-The **Instrument** tab retains all existing magnetometer features and the magpie
-launcher icon. The **MAGPIE Vision** tab adds an optional rear-camera preview and
-real offline object detection using the bundled Apache-2.0 EfficientDet-Lite0
-COCO model. Grant camera permission in Vision; denial or missing camera hardware
-does not prevent instrument use. No internet permission is declared.
+The **Instrument** tab retains the existing independent magnetometer, baseline,
+filter, gauge and history. **MAGPIE Vision** retains the rear CameraX preview,
+bundled Apache-2.0 EfficientDet-Lite0 COCO detector, freeze, torch and screenshot
+capture. Grant camera permission only when using Vision; denial or missing camera
+hardware does not prevent instrument use. No internet permission is declared.
 
-- CameraX 1.4.1 uses `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST`, RGBA frames and a
-  single worker executor. Model initialization, pixel conversion and CPU inference
-  run off the main thread. Every ImageProxy closes in `finally`. The camera unbinds
-  on Activity pause and when leaving Vision; workers and the interpreter close on
-  disposal. No background camera or magnetic monitoring.
-- Preview and analysis share a CameraX `ViewPort`. Analysis crops to that viewport,
-  rotates by `ImageInfo.rotationDegrees`, and letterboxes to 320×320. The decoder
-  removes letterbox padding; CameraX `ImageProxyTransformFactory` and
-  `CoordinateTransform` map boxes into the `FILL_CENTER` preview. Layout/display
-  changes rebind the viewport, clearing old boxes. No front-camera mirroring is
-  assumed. Boxes are clipped to the preview and hidden when analysis is stale.
-- Labels show **uncalibrated model scores**, not identification probabilities.
-  Threshold: 0.35; at most ten displayed regions. COCO labels include ordinary
-  object categories and cannot establish material or metal identity.
-- Tap a box to select its region. Selection follows only overlapping same-label
-  regions and clears when lost. This is not identity tracking and can be ambiguous
-  with similar overlapping objects. It provides no magnetic source attribution.
-- The magnetic overlay shows fresh raw and smoothed field magnitude and signed
-  smoothed magnitude deviation from the instrument's shared baseline. Baseline and
-  reset controls operate on the same state as the Instrument tab. Magnetic values
-  remain live when the camera image is frozen. Missing/stale sensor data shows
-  unavailable, not zero.
-- **Freeze** displays the last analyzed image with its matching detections;
-  **Resume** returns to live preview. **Torch** is enabled only when supported.
-  **Capture** saves the analyzed frame, matching overlays and a snapshot of magnetic
-  readings to `Pictures/MAGPIE` using MediaStore, without storage permission.
-  Captures use the analyzed frame rather than a newer, mismatched preview frame.
-  Live boxes still have inference latency, so fast movement can visibly lag.
-- `MaterialClassifier` is a separate, replaceable adapter contract. Its current
-  implementation is `NoMaterialModel`; the UI explicitly says **Material unknown**
-  and **Inconclusive**. No material-classification model is installed or claimed.
+### Acquire a target
 
-Model source revision, original license, tensor contract and SHA-256 hashes are
-recorded in [third_party/models/README.md](third_party/models/README.md). The model
-and labels are bundled in the APK; Gradle checks their hashes before building.
-LiteRT 1.1.2 runs inference on Android without Play Services. All added dependencies
-are Apache-2.0 open source.
+Live detection continues to draw multiple boxes. **Tap a box** to acquire that
+specific detection from the corresponding analyzed frame. Overlapping boxes use
+the smallest containing box, then the highest object score. A tap outside boxes
+does not release the target.
 
-### Next increment: guided scanning and evidence
+The acquired frame appears in a pinned **ACQUIRED • SNAPSHOT** inset and in the
+scrollable target panel, with the selected box highlighted **amber** and all other
+boxes dimmed. Live boxes are also dimmed while a target is acquired. The amber box
+belongs to the saved frame, not to a moving object in the live feed: **there is no
+continuous object tracking or matching against subsequent detections**.
 
-**Guided three-pass acquisition is not yet enabled.** The first increment must not
-attribute live magnetic changes to a selected visual object. A tested calculation
-foundation (`ScanMath.kt`) records baseline mean, baseline population standard
-deviation, each pass's peak absolute deviation, overall peak, peak spread and
-relative peak spread. These are descriptive measurements, not probabilities.
-It rejects incomplete passes and nonfinite samples but does not validate acquisition
-conditions, sample timing, calibration or object association; those belong in the
-next guided acquisition state machine.
+The selected crop is created by inverting that frame's CameraX image-to-preview
+affine transform, mapping the four box corners back to upright image pixels,
+clipping to the image and rounding outward. It is not a screen capture or a crop
+from an unrelated later frame. CameraX preview/analysis still share a viewport;
+rotation, model letterboxing, `FILL_CENTER` scaling and preview cropping are
+accounted for. Invalid/singular transforms fail explicitly.
 
-That next increment will guide the user to a stable baseline away from the object,
-keep phone orientation and distance controlled, acquire three timed approach/return
-passes, record fresh sensor samples and accuracy, and abort interrupted or invalid
-scans. It will report noise, repeatability and limitations with an Unknown/Inconclusive
-outcome. Torch changes, the phone's own components, motion and nearby magnetic
-sources can affect readings. Even a repeatable response cannot identify a metal.
+Acquired image, crop, material result and completed scan remain fixed across new
+frames, camera rebinds, tab changes and rotation until **Release target** or a tap
+on another detection. A ViewModel retains these snapshots; process death clears
+them. Replacing/releasing a target discards its scan. Superseded asynchronous jobs
+cannot overwrite the new target. No acquired images are saved automatically.
 
-A material adapter must only be enabled after a suitably trained, licensed model
-has been integrated, its tensor/label contract checked, real inference tested, and
-its operating domain documented. Report scores as uncalibrated until calibration
-has been validated. Never derive material predictions from COCO labels.
+### Material model and decision states
+
+**No verified material-classification model is installed in this release.** The
+current result is explicitly **Material model unavailable**, with decision **UNKNOWN**.
+Object labels such as COCO's “knife” or “cup” never become material/metal labels.
+There are no fabricated material candidates or scores.
+
+`MaterialClassifier` is a separate replaceable adapter. A future adapter must
+verify redistribution rights, material training/label semantics, initialization,
+tensor preprocessing and real on-device inference before exposing
+`MaterialModelStatus.Ready`. Its `VerifiedMaterialModel` records provenance,
+license, validation report and trained material-label families. These records are
+an adapter contract, not an automatic license or suitability verifier.
+
+Only acquisition schedules material analysis, once on a dedicated worker and
+**only on the selected crop's pixels**. Live object detections never schedule
+material inference. With an unavailable model, even pixel extraction for the
+classifier is skipped. Queued obsolete acquisitions are skipped; already running
+native inference can finish but its stale result is discarded. Model/runtime or
+output-contract failures become unavailable/UNKNOWN and do not remove the image.
+
+For a genuinely installed adapter, the UI displays candidate material labels and
+**uncalibrated model scores**. Candidate labels must belong to that material
+model's documented trained vocabulary. Default decision gates are a top score
+of at least 0.70 and a top-versus-runner-up margin of at least 0.15. These are
+conservative configurable heuristics, **not calibrated probabilities**; a future
+adapter must validate its own operating policy.
+
+- **METAL_SUSPECTED:** a qualifying material-model label belongs to its trained
+  metal family. Offer the guided magnetic scan; this does not establish composition.
+- **NONMETAL_SUSPECTED:** a qualifying trained nonmetal-family label. Report the
+  visual result only; skip magnetic scanning/fusion for that target.
+- **UNKNOWN:** unavailable, failed, pending, ambiguous or unsupported evidence.
+  Report inconclusive and offer an optional manual scan once acquisition completes.
+
+Current production behavior is the UNKNOWN path. Metal/nonmetal policy tests use
+synthetic fixtures in `src/test` only; those fixtures are not shipped models.
+
+### Guided magnetic scan
+
+For METAL_SUSPECTED or UNKNOWN, read and acknowledge the controlled-scan guidance.
+Fresh medium/high-accuracy magnetic readings are required. Start away from the
+selected physical object, maintain phone orientation and use a safe repeatable
+distance. Do not change the torch or nearby objects during acquisition.
+
+Each of **three passes** records raw magnetic magnitude, actual SensorEvent measurement timestamps and
+sensor-reported accuracy. Delayed sensor events are not stamped as fresh on receipt. The protocol is **baseline 3 s → approach 3 s → hold 3 s → retreat
+3 s**. A banner gives the current action and countdown. Between passes, return to
+the original location and explicitly begin the next baseline. This is a manually
+controlled protocol; the app cannot verify distance, phone orientation, movement
+or that the user is scanning the selected physical object.
+
+The scan aborts on invalid/low-accuracy samples, a reading gap over 0.75 s, fewer
+than ten samples in a phase, out-of-order timestamps, Activity pause, leaving Vision,
+reset or cancellation. It must restart after interruption, including interruption
+between passes. Target selection remains intact. Freeze, torch changes, screenshot
+capture and instrument baseline capture are disabled during active acquisition
+where they could disturb the protocol. The Instrument screen remains independent;
+its shared display baseline is not overwritten by scan baselines.
+
+Completed scans retain all 3 × 4 phase records in memory. The UI and exported
+screenshot report each pass's baseline mean, baseline population standard deviation
+(noise), peak absolute deviation, signed mean hold deviation, retreat residual,
+peak spread and relative peak spread. Relative spread is a descriptive ratio,
+not a probability, and is undefined for zero response.
+
+Interpretation uses documented **heuristics**, not a calibrated metal-identification
+model: hold response must exceed `max(1 µT, 3 × baseline noise)` in every pass,
+hold signs must agree, retreat residuals must return within that gate, relative
+peak spread must be at most 0.5, and baseline drift must stay within the largest
+noise gate. Passing these checks reports only a **provisional hypothesis of
+association**. Weak, noisy, inconsistent or drifting responses remain inconclusive.
+**A weak response is never proof of a nonmetallic object.** Nonferromagnetic metals
+can have weak responses. Surrounding materials, phone components, motion and other
+interference can explain field changes. No scan establishes metal identity.
+
+### Camera, capture and offline behavior
+
+CameraX 1.4.1 uses `STRATEGY_KEEP_ONLY_LATEST`, RGBA frames and one analysis executor.
+Model initialization, conversion and CPU inference run off the main thread; every
+ImageProxy closes in `finally`. Camera resources unbind on pause and leaving Vision.
+Old viewport frames are cleared on rebind; the independent acquired target remains.
+The camera and sensor do not monitor in the background.
+
+EfficientDet scores are uncalibrated; detection threshold is 0.35 with at most ten
+regions. Live boxes have inference latency and stale boxes are hidden. **Freeze**
+pauses live analysis and displays a matching analyzed image, while magnetic values
+remain live. It is separate from acquiring a target, which leaves detection running.
+**Capture** exports the acquired frame and amber/dim overlays when a target exists,
+otherwise the current analyzed frame, with acquisition/material/scan explanations
+and a snapshot of live magnetic readings. Files are PNGs in `Pictures/MAGPIE` via
+MediaStore without storage permission. Footer text wraps to keep caveats visible.
+
+Model source revision, original redistribution license, tensor contract and
+SHA-256 hashes are in [third_party/models/README.md](third_party/models/README.md).
+The detector and labels are bundled and hash-checked by Gradle. LiteRT 1.1.2 runs
+on Android without Play Services. Existing open-source dependencies and the
+Android-only Ubuntu GitHub Actions debug-APK workflow are preserved.
 
 ## Operation
 
@@ -95,9 +159,12 @@ The scrollable, inset-aware UI supports portrait and landscape. No internet perm
 
 ## Verification
 
-Unit tests cover three-axis magnitude, signed baseline deviation, EMA initialization, filtering, reset and invalid input. Vision tests cover letterbox inversion for portrait/landscape, every orthogonal
-rotation, invalid/padding-only boxes, region selection, three-pass calculation
-foundations and conservative evidence explanations. Existing magnetometer tests
+Unit tests cover three-axis magnitude, signed baseline deviation, EMA initialization, filtering, reset and invalid input. Vision tests cover letterbox inversion, affine crop inversion across scale,
+translation, every orthogonal rotation and mirroring, invalid boxes/transforms,
+specific selection and stale-job rejection, material decision gates and unavailable
+models, crop-only inference, scan phase recording/interruption/quality, weak-response
+interpretation and nonmetal fusion exclusion. Independent instrument sample observers
+are also tested. Existing magnetometer tests
 remain in place. `tools/verify_model.py` verifies model/label hashes and runs real
 inference against the upstream licensed cat fixture. To run it locally:
 
@@ -117,19 +184,22 @@ establish physical overlay alignment, camera compatibility or detector accuracy.
 
 Vision device acceptance checks: deny/grant/revoke camera permission; try absent
 rear camera/flash/magnetometer; compare boxes against stationary objects in portrait
-and landscape, including preview edges; rotate while live and frozen; select similar
-overlapping objects; background/resume and switch tabs repeatedly; check freeze,
-torch failures and screenshot overlays/metadata in Gallery; confirm stale boxes and
-readings disappear. Test actual Android native model inference on target devices,
+and landscape, including preview edges; rotate while live/frozen/acquired; acquire
+similar overlapping objects and confirm the snapshot never follows later boxes;
+release/replace targets rapidly; background/resume and switch tabs; check freeze,
+torch and screenshot overlays/metadata. Test three complete physical scan passes,
+accuracy loss, backgrounding and between-pass interruption. Confirm acquired crops
+remain correct at preview edges and rotated/cropped viewports. Verify snapshots
+remain stable while stale live boxes/readings disappear. Test actual Android native model inference on target devices,
 including device ABI/16 KB page-size compatibility.
 
 Instrument device acceptance checks: launch on a device without a magnetometer; observe live readings and accuracy on hardware; capture/reset baseline; rotate repeatedly; background and resume; verify no monitoring while paused; confirm stale readings become unavailable and the chart expires old data. These require a device/emulator and are separate from JVM tests.
 
 ## Roadmap
 
-**Phase 2 — anomaly alerts:** add configurable magnitude-deviation thresholds, dwell time, hysteresis and cooldown to the pure measurement layer, with tests for threshold crossings and sensor loss. Gate alerts on valid fresh readings and accuracy; explain that alerts indicate field changes only. Start with foreground UI alerts. Any future notifications or background sensing require an explicit opt-in design and lifecycle/battery review.
+**Future — anomaly alerts:** add configurable magnitude-deviation thresholds, dwell time, hysteresis and cooldown to the pure measurement layer, with tests for threshold crossings and sensor loss. Gate alerts on valid fresh readings and accuracy; explain that alerts indicate field changes only. Start with foreground UI alerts. Any future notifications or background sensing require an explicit opt-in design and lifecycle/battery review.
 
-**Phase 3 — Glance widgets:** add an AndroidX Glance module and widget provider, with timestamped snapshots from explicitly persisted foreground measurements. Show stale/unavailable states and open the app for live capture. Widgets must not imply continuous or live monitoring; no background sensor listener. Widgets are not implemented in this phase.
+**Future — Glance widgets:** add an AndroidX Glance module and widget provider, with timestamped snapshots from explicitly persisted foreground measurements. Show stale/unavailable states and open the app for live capture. Widgets must not imply continuous or live monitoring; no background sensor listener. Widgets are not implemented in this phase.
 
 ## License
 

@@ -46,8 +46,51 @@ class Letterbox(val width: Int, val height: Int, val size: Int = 320) {
 
 data class Detection(val label: String, val score: Float, val box: Box2)
 
-/** Re-selection by overlapping region only; this is deliberately not an identity tracker. */
-fun matchSelection(previous: Detection?, detections: List<Detection>): Detection? = previous?.let { old ->
-    detections.filter { it.label == old.label && it.box.iou(old.box) >= 0.25f }
-        .maxByOrNull { it.box.iou(old.box) }
+/** Affine image-to-preview map. Inverting this map, not screen coordinates, defines crops. */
+data class Affine2(val a: Float, val b: Float, val c: Float, val d: Float, val e: Float, val f: Float) {
+    fun map(p: Point2) = Point2(a * p.x + b * p.y + c, d * p.x + e * p.y + f)
+    fun inverse(): Affine2? {
+        if (!listOf(a, b, c, d, e, f).all { it.isFinite() }) return null
+        val determinant = a * e - b * d
+        if (!determinant.isFinite() || kotlin.math.abs(determinant) < 1e-8f) return null
+        return Affine2(e / determinant, -b / determinant, (b * f - e * c) / determinant,
+            -d / determinant, a / determinant, (d * c - a * f) / determinant)
+    }
+    fun map(box: Box2): Box2 {
+        val corners = listOf(Point2(box.left, box.top), Point2(box.right, box.top),
+            Point2(box.left, box.bottom), Point2(box.right, box.bottom)).map(::map)
+        return Box2(corners.minOf { it.x }, corners.minOf { it.y }, corners.maxOf { it.x }, corners.maxOf { it.y })
+    }
+}
+
+data class PixelCrop(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+    val width get() = right - left
+    val height get() = bottom - top
+}
+
+fun imageCrop(previewBox: Box2, imageToPreview: Affine2, imageWidth: Int, imageHeight: Int): PixelCrop? {
+    if (!previewBox.valid || imageWidth <= 0 || imageHeight <= 0) return null
+    val source = imageToPreview.inverse()?.map(previewBox)?.takeIf { it.valid } ?: return null
+    val crop = PixelCrop(
+        kotlin.math.floor(source.left.toDouble()).toInt().coerceIn(0, imageWidth),
+        kotlin.math.floor(source.top.toDouble()).toInt().coerceIn(0, imageHeight),
+        kotlin.math.ceil(source.right.toDouble()).toInt().coerceIn(0, imageWidth),
+        kotlin.math.ceil(source.bottom.toDouble()).toInt().coerceIn(0, imageHeight)
+    )
+    return crop.takeIf { it.width > 0 && it.height > 0 }
+}
+
+/** A miss does not release a target. No matching against later frames is performed. */
+fun selectDetection(point: Point2, detections: List<Detection>): Detection? = detections
+    .filter { it.box.valid && it.box.contains(point.x, point.y) }
+    .sortedWith(compareBy<Detection> { it.box.width * it.box.height }.thenByDescending { it.score })
+    .firstOrNull()
+
+/** Token guard prevents a previous asynchronous crop/classification overwriting a new target. */
+class TargetSelection {
+    @Volatile var token: Long = 0; private set
+    var detection: Detection? = null; private set
+    fun acquire(detection: Detection): Long { this.detection = detection; return ++token }
+    fun release() { detection = null; token++ }
+    fun accepts(token: Long) = token == this.token && detection != null
 }
