@@ -2,7 +2,6 @@ package uk.co.magpie.instrument
 
 import android.hardware.Sensor
 import android.hardware.SensorManager
-import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,7 +20,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
@@ -41,12 +39,6 @@ private fun accuracyLabel(value: Int) = when (value) {
 
 @Composable
 fun InstrumentScreen(model: InstrumentModel, sensor: Sensor?) {
-    LaunchedEffect(model.active) {
-        while (model.active) {
-            model.tick(SystemClock.elapsedRealtimeNanos() / 1e9)
-            delay(250)
-        }
-    }
     MaterialTheme(colorScheme = darkColorScheme(primary = Green, secondary = Amber, background = Color(0xFF0E1512), surface = Panel)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

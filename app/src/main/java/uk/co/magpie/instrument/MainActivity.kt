@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         model = ViewModelProvider(this)[InstrumentModel::class.java]
         manager = getSystemService(SENSOR_SERVICE) as SensorManager
         sensor = manager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-        setContent { InstrumentScreen(model, sensor) }
+        setContent { MagpieApp(model, sensor) }
     }
     override fun onResume() {
         super.onResume()
