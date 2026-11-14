@@ -1,0 +1,31 @@
+MAGPIE material-model attribution
+
+Original material classifier: prithivMLmods/Minc-Materials-23
+Revision: b21f5bc35e96bfd60ef218088ae6ecba56ffe858
+https://huggingface.co/prithivMLmods/Minc-Materials-23
+Publisher-declared license: Apache License 2.0.
+
+ONNX conversion and INT8 quantization: Manh Huynh (manhhuynhsd)
+Model: manhhuynhsd/Minc-Materials-23-ONNX
+Revision: 273554c59c161c2b787c56136e21bfd64d56ff13
+https://huggingface.co/manhhuynhsd/Minc-Materials-23-ONNX
+Publisher-declared license: Apache License 2.0.
+Unmodified model_quantized.onnx is bundled as minc_materials23_int8.onnx.
+SHA-256: 0222f661abc762bc0ef69a7eded939a921ab7e0f2174c37788891162f1d0f2c8
+
+Base model: Google Research, google/siglip2-base-patch16-224 (Apache-2.0).
+Training dataset attribution: Materials in Context Database (MINC),
+Sean Bell, Paul Upchurch, Noah Snavely and Kavita Bala, CVPR 2015.
+Dataset annotations and original photos have their own licenses. This app
+redistributes pretrained weights under the model publishers' license declarations,
+not the original training photos.
+
+The model predicts 23 visible-surface categories, including one broad metal class.
+It does not establish bulk composition, hidden metal, magnetic properties or alloy
+identity. Scores are uncalibrated; no field-accuracy claim is made. Bounding-box
+backgrounds, coatings, reflections and mixed materials can mislead classification.
+
+ONNX Runtime 1.23.2: Microsoft Corporation, MIT License.
+Full MIT license and third-party notices are included alongside this notice.
+Model inference uses the built-in CPU provider. Telemetry is explicitly disabled.
+No accounts, cloud inference, runtime model download or internet permission.

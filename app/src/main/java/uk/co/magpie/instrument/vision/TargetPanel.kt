@@ -29,15 +29,18 @@ fun TargetPanel(target: AcquiredTarget, targets: TargetAcquisitionModel) {
     }
     TextButton(onClick = targets::release) { Text("Release target") }
     when (val material = target.material) {
-        MaterialResult.Pending -> Text("Preparing selected crop…")
+        MaterialResult.Pending -> Text("Analyzing selected crop…")
         is MaterialResult.Unavailable -> Text(material.reason, color = amber)
         is MaterialResult.Predictions -> {
-            Text("Material candidates • uncalibrated model scores", color = amber)
+            Text("Surface-material candidates • uncalibrated scores", color = amber)
+            Text(material.model, style = MaterialTheme.typography.bodySmall)
+            Text("Experimental visible-surface suggestions. Background, coatings and mixed materials can affect results; composition and alloy identity are not established.", style = MaterialTheme.typography.bodySmall)
             material.scores.sortedByDescending { it.score }.take(5).forEach {
                 Text("${it.label}: ${String.format(Locale.UK, "%.3f", it.score)}")
             }
         }
     }
+    MaterialModelInfo()
     Text(explainTarget(target.decision, target.material, targets.scan.result), color = amber)
 }
 

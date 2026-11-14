@@ -83,8 +83,8 @@ fun decideMaterial(result: MaterialResult, status: MaterialModelStatus): Materia
 
 fun explainTarget(decision: MaterialDecision, material: MaterialResult, scan: GuidedScanResult? = null): String {
     val visual = when (decision) {
-        MaterialDecision.METAL_SUSPECTED -> "METAL_SUSPECTED: visual material model evidence only; composition is not established. A guided scan is offered."
-        MaterialDecision.NONMETAL_SUSPECTED -> "NONMETAL_SUSPECTED: visual material model result only. Magnetic fusion is skipped."
+        MaterialDecision.METAL_SUSPECTED -> "METAL_SUSPECTED: a visible-surface model suggestion; composition and alloy identity are not established. A guided scan is offered."
+        MaterialDecision.NONMETAL_SUSPECTED -> "NONMETAL_SUSPECTED: visible-surface suggestion only; hidden or mixed materials remain unknown. Magnetic fusion is skipped."
         MaterialDecision.UNKNOWN -> if (material is MaterialResult.Unavailable) "UNKNOWN: ${material.reason}. Inconclusive; an optional manual scan is available."
             else "UNKNOWN: material evidence is pending, ambiguous or insufficient. Inconclusive; an optional manual scan is available."
     }
@@ -105,6 +105,7 @@ fun analyzeSelectedCrop(classifier: MaterialClassifier, input: () -> MaterialInp
         return MaterialAnalysis(result, decideMaterial(result, status))
     } catch (error: Exception) { return failedMaterialAnalysis(error) }
     catch (error: LinkageError) { return failedMaterialAnalysis(error) }
+    catch (error: OutOfMemoryError) { return failedMaterialAnalysis(error) }
 }
 private fun failedMaterialAnalysis(error: Throwable) = MaterialAnalysis(
     MaterialResult.Unavailable("Material model unavailable: ${error.message ?: error.javaClass.simpleName}"), MaterialDecision.UNKNOWN)

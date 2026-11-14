@@ -14,7 +14,7 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Install with `adb instal
 
 Pinned stable toolchain: AGP 8.7.3, Gradle 8.9, Kotlin and Compose compiler plugin 2.0.21, Compose BOM 2024.12.01, Activity 1.9.3, Lifecycle 2.8.7. Java source/target is 17. The Gradle wrapper is included and its distribution checksum is pinned. A first build requires access to Google Maven, Maven Central and Gradle distributions.
 
-## MAGPIE Vision — Target Acquisition Mode (v1.2.0)
+## MAGPIE Vision — Target Acquisition Mode (v1.3.0)
 
 The **Instrument** tab retains the existing independent magnetometer, baseline,
 filter, gauge and history. **MAGPIE Vision** retains the rear CameraX preview,
@@ -50,10 +50,24 @@ cannot overwrite the new target. No acquired images are saved automatically.
 
 ### Material model and decision states
 
-**No verified material-classification model is installed in this release.** The
-current result is explicitly **Material model unavailable**, with decision **UNKNOWN**.
-Object labels such as COCO's “knife” or “cup” never become material/metal labels.
-There are no fabricated material candidates or scores.
+**This release bundles a real 23-class MINC material model**, fine-tuned from
+SigLIP2, using the upstream Apache-2.0 INT8 ONNX export. Acquiring a target runs
+real offline inference on that crop and displays uncalibrated visible-surface
+scores. Object labels such as COCO's “knife” or “cup” are never supplied to the
+material classifier. It has one broad `metal` class, not alloy/element identities.
+This is experimental surface recognition, not proof of bulk composition.
+
+The model adds approximately 89 MB of weights to the APK. It loads lazily on the
+material worker after acquisition. The APK asset is memory-mapped and checked for
+length, SHA-256, label order and tensor contract; there is no runtime download or
+second model-file copy. ONNX Runtime 1.23.2 runs on the built-in CPU provider with
+telemetry explicitly disabled. EfficientDet continues to use LiteRT unchanged.
+Model/session/runtime failures still show **Material model unavailable / UNKNOWN**.
+
+Pinned weight sources, declared redistribution licenses and limitations are in
+[third_party/materials23/README.md](third_party/materials23/README.md). Full model
+and native-runtime notices ship inside the APK and are readable offline via
+**Material model & licenses**. Original MINC training photos are not redistributed.
 
 `MaterialClassifier` is a separate replaceable adapter. A future adapter must
 verify redistribution rights, material training/label semantics, initialization,
@@ -83,8 +97,12 @@ adapter must validate its own operating policy.
 - **UNKNOWN:** unavailable, failed, pending, ambiguous or unsupported evidence.
   Report inconclusive and offer an optional manual scan once acquisition completes.
 
-Current production behavior is the UNKNOWN path. Metal/nonmetal policy tests use
-synthetic fixtures in `src/test` only; those fixtures are not shipped models.
+Production material candidates now come from the bundled trained weights. Decision
+gates remain conservative heuristics: `painted`, `mirror`, `other` and `sky` are
+ambiguous and remain UNKNOWN; other classes describe visible surfaces only. A
+bounding-box crop can contain background, so even a strong score does not establish
+the selected object's hidden or mixed composition. Native/host inference tests
+exercise real weights; decision-policy unit fixtures remain synthetic test data.
 
 ### Guided magnetic scan
 
@@ -155,7 +173,7 @@ An exponential moving average (alpha 0.20) filters each axis, seeded with the fi
 
 The Canvas history retains the most recent 60 seconds, sampled for display at up to 10 Hz, with raw amber and smoothed green traces. Gaps over two seconds are not connected. Reset clears readings, baseline, filter and history. A ViewModel retains state across Activity recreation and rotation, but not process death. The filter re-seeds on resume; baseline and recent history remain. Listener registration is confined to Activity onResume/onPause. There is no service or background monitoring.
 
-The scrollable, inset-aware UI supports portrait and landscape. No internet permission, advertising, analytics, accounts, Firebase or Google Play Services. Runtime dependencies are open-source AndroidX/Kotlin/LiteRT libraries; unit tests use JUnit 4 (EPL-1.0). AndroidX and Kotlin use Apache-2.0.
+The scrollable, inset-aware UI supports portrait and landscape. No internet permission, advertising, analytics, accounts, Firebase or Google Play Services. Runtime dependencies are open-source AndroidX/Kotlin/LiteRT/ONNX Runtime libraries; unit tests use JUnit 4 (EPL-1.0). AndroidX and Kotlin use Apache-2.0.
 
 ## Verification
 
@@ -172,15 +190,23 @@ inference against the upstream licensed cat fixture. To run it locally:
 python3 -m venv .venv
 .venv/bin/pip install -r tools/model-test-requirements.txt
 .venv/bin/python tools/verify_model.py
+.venv/bin/python tools/verify_material_model.py
 ```
 
 GitHub Actions runs that host smoke test and the same Gradle build/test command
-on Ubuntu with JDK 17, checks the APK has no internet permission, and uploads `MAGPIE-debug-apk` and test reports. Run status is available on the repository's Actions tab after this project is pushed to GitHub.
+on Ubuntu with JDK 17. It also runs the material host reference test, then real
+Android-native material/acquisition tests on an API 29 x86_64 emulator, checks the
+APK has no internet permission, and uploads `MAGPIE-debug-apk` and test reports. Run status is available on the repository's Actions tab after this project is pushed to GitHub.
 
 The host smoke test uses LiteRT 2.3.0 to check the real model; the Android adapter
-uses LiteRT 1.1.2 and checks its tensor contract at startup. Camera/magnetometer
-hardware was not available in the build workspace. JVM and host tests do not
-establish physical overlay alignment, camera compatibility or detector accuracy.
+uses LiteRT 1.1.2 and checks its tensor contract at startup. The material adapter
+uses ONNX Runtime 1.23.2 on both host and Android; its Kotlin preprocessing is
+compared against Pillow references, and native output is compared against the
+committed real-model score vector. See
+[material validation scope](third_party/materials23/VALIDATION.md). Camera/magnetometer
+hardware was not available in the build workspace. JVM, host and emulator tests do
+not establish physical overlay alignment, field material accuracy, calibration,
+camera compatibility on every phone, or detector accuracy.
 
 Vision device acceptance checks: deny/grant/revoke camera permission; try absent
 rear camera/flash/magnetometer; compare boxes against stationary objects in portrait

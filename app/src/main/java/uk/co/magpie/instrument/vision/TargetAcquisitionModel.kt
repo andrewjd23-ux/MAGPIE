@@ -1,11 +1,12 @@
 package uk.co.magpie.instrument.vision
 
+import android.app.Application
 import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -24,7 +25,8 @@ data class AcquiredTarget(
 )
 
 /** Independent from camera frames and InstrumentModel. Bitmaps survive configuration changes. */
-class TargetAcquisitionModel(private val classifier: MaterialClassifier = NoMaterialModel()) : ViewModel() {
+class TargetAcquisitionModel(application: Application) : AndroidViewModel(application) {
+    private val classifier: MaterialClassifier = OnnxMaterialClassifier(application)
     var target by mutableStateOf<AcquiredTarget?>(null); private set
     var message by mutableStateOf<String?>(null); private set
     var scan by mutableStateOf(ScanProgress(ScanPhase.IDLE, 1, 0.0, null, null)); private set

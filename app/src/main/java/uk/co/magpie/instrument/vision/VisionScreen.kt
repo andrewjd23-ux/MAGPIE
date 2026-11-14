@@ -156,7 +156,7 @@ fun VisionScreen(model: InstrumentModel, targets: TargetAcquisitionModel) {
                 target?.let {
                     Text("${it.decision} • " + when (it.material) {
                         is MaterialResult.Unavailable -> "Material model unavailable"
-                        MaterialResult.Pending -> "Preparing selected crop"
+                        MaterialResult.Pending -> "Analyzing selected crop"
                         else -> "Acquired material result"
                     }, color = MaterialTheme.colorScheme.secondary)
                 }
